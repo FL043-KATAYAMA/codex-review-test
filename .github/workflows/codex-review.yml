@@ -26,22 +26,11 @@ jobs:
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           DIFF=$(gh pr diff $PR_NUMBER)
-          node -e "
-          const https = require('https');
-          const diff = process.env.DIFF;
-          const data = JSON.stringify({
-            model: 'gpt-4o',
-            messages: [{role: 'user', content: 'Review this code diff and provide feedback in Japanese:\n\n' + diff}]
-          });
-          const options = {
-            hostname: 'api.openai.com',
-            path: '/v1/chat/completions',
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ' + process.env.OPENAI_API_KEY
-            }
-          };
-          const req = https.request(options, res => {
-            let body = '';
-            res.on('
+          echo "$DIFF" > diff.txt
+          node review.js
+
+      - name: Post Comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "$(cat review.txt)"
