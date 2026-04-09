@@ -7,6 +7,8 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -17,39 +19,29 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
-        run: npm install node-fetch
-
-      - name: Run Codex Review
+      - name: Run Review
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           DIFF=$(gh pr diff $PR_NUMBER)
-          
           node -e "
-          const fetch = require('node-fetch');
-          const diff = \`$DIFF\`;
-          
-          fetch('https://api.openai.com/v1/chat/completions', {
+          const https = require('https');
+          const diff = process.env.DIFF;
+          const data = JSON.stringify({
+            model: 'gpt-4o',
+            messages: [{role: 'user', content: 'Review this code diff and provide feedback in Japanese:\n\n' + diff}]
+          });
+          const options = {
+            hostname: 'api.openai.com',
+            path: '/v1/chat/completions',
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $OPENAI_API_KEY'
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o',
-              messages: [{
-                role: 'user',
-                content: '以下のコード差分をレビューしてください。バグ・セキュリティ・可読性の観点で日本語で回答してください。\n\n' + diff
-              }]
-            })
-          })
-          .then(r => r.json())
-          .then(data => {
-            const review = data.choices[0].message.content;
-            const { execSync } = require('child_process');
-            execSync(\`gh pr comment $PR_NUMBER --body \"\${review.replace(/\"/g, '\\\\\"')}\"\`, {env: process.env});
-          });
-          "
+              'Authorization': 'Bearer ' + process.env.OPENAI_API_KEY
+            }
+          };
+          const req = https.request(options, res => {
+            let body = '';
+            res.on('
