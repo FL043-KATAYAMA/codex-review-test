@@ -17,13 +17,37 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Codex CLI
-        run: npm install -g @openai/codex
+      - name: Install dependencies
+        run: npm install node-fetch
 
       - name: Run Codex Review
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr diff ${{ github.event.pull_request.number }} | codex "このコードの差分をレビューしてください。バグ・セキュリティ・可読性の観点で日本語で回答してください。" > review.txt
-          gh pr comment ${{ github.event.pull_request.number }} --body "$(cat review.txt)"
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          DIFF=$(gh pr diff $PR_NUMBER)
+          node -e "
+          const fetch = require('node-fetch');
+          const diff = \`${DIFF}\`;
+          fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${OPENAI_API_KEY}'
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o',
+              messages: [{
+                role: 'user',
+                content: '以下のコード差分をレビューしてください。バグ・セキュリティ・可読性の観点で日本語で回答してください。\n\n' + diff
+              }]
+            })
+          })
+          .then(r => r.json())
+          .then(data => {
+            const review = data.choices[0].message.content;
+            const { execSync } = require('child_process');
+            execSync(\`gh pr comment ${PR_NUMBER} --body \"\${review.replace(/\"/g, '\\\\\"')}\"\`, {env: process.env});
+          });
+          "
